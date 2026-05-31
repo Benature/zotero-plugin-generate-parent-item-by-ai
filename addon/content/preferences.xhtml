@@ -1,0 +1,64 @@
+<vbox xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+      xmlns:html="http://www.w3.org/1999/xhtml"
+      id="pig-pref-pane">
+
+  <!-- LLM Connection -->
+  <groupbox>
+    <label class="header" data-l10n-id="pig-prefs-llm-header"/>
+
+    <hbox align="center" style="margin-bottom:6px">
+      <label style="min-width:110px" data-l10n-id="pig-prefs-base-url-label"/>
+      <html:input id="pig-base-url" type="text"
+                  style="flex:1;margin-inline-start:8px"/>
+    </hbox>
+
+    <hbox align="center" style="margin-bottom:6px">
+      <label style="min-width:110px" data-l10n-id="pig-prefs-api-key-label"/>
+      <html:input id="pig-api-key" type="password"
+                  style="flex:1;margin-inline-start:8px"/>
+    </hbox>
+
+    <hbox align="center" style="margin-bottom:6px">
+      <label style="min-width:110px" data-l10n-id="pig-prefs-model-label"/>
+      <html:input id="pig-model" type="text"
+                  style="flex:1;margin-inline-start:8px"/>
+    </hbox>
+
+    <hbox align="center">
+      <button id="pig-test-btn" data-l10n-id="pig-prefs-test-btn"/>
+      <label id="pig-test-result" style="margin-inline-start:10px;flex:1"/>
+    </hbox>
+  </groupbox>
+
+  <!-- Item Type -->
+  <groupbox>
+    <label class="header" data-l10n-id="pig-prefs-itemtype-header"/>
+
+    <hbox align="center">
+      <label style="min-width:110px" data-l10n-id="pig-prefs-forced-itemtype-label"/>
+      <menulist id="pig-forced-item-type" style="margin-inline-start:8px;min-width:220px">
+        <menupopup id="pig-forced-item-type-popup"/>
+      </menulist>
+    </hbox>
+  </groupbox>
+
+  <!-- Prompts -->
+  <groupbox>
+    <label class="header" data-l10n-id="pig-prefs-prompts-header"/>
+
+    <vbox style="margin-bottom:10px">
+      <label data-l10n-id="pig-prefs-system-prompt-label"/>
+      <html:textarea id="pig-system-prompt" rows="7"
+                     style="width:100%;font-family:monospace;font-size:11px;resize:vertical"/>
+    </vbox>
+
+    <vbox>
+      <label data-l10n-id="pig-prefs-user-prompt-label"/>
+      <description id="pig-user-prompt-hint"
+                   style="font-size:11px;opacity:0.7;margin-bottom:3px"/>
+      <html:textarea id="pig-user-prompt" rows="7"
+                     style="width:100%;font-family:monospace;font-size:11px;resize:vertical"/>
+    </vbox>
+  </groupbox>
+
+</vbox>

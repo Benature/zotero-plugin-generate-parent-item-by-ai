@@ -1,0 +1,55 @@
+{
+  "name": "parent-item-generator",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "AI-assisted parent-item generation for standalone Zotero attachments.",
+  "config": {
+    "addonName": "Parent Item Generator",
+    "addonID": "parent-item-generator@local",
+    "addonRef": "parentitemgenerator",
+    "addonInstance": "ParentItemGenerator",
+    "prefsPrefix": "extensions.parentItemGenerator"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/benature/parent-item-generator.git"
+  },
+  "author": "benature",
+  "homepage": "https://github.com/benature/parent-item-generator#readme",
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "start": "zotero-plugin serve",
+    "dev": "zotero-plugin serve",
+    "dev:mac": "ZOTERO_PLUGIN_ZOTERO_BIN_PATH=/Applications/Zotero.app/Contents/MacOS/zotero zotero-plugin serve",
+    "hot": "zotero-plugin serve",
+    "build": "zotero-plugin build && tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "build:xpi": "zotero-plugin build",
+    "release": "zotero-plugin release",
+    "test": "zotero-plugin test"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "@zotero-plugin/eslint-config": "^0.6.7",
+    "eslint": "^9.39.2",
+    "prettier": "^3.7.4",
+    "typescript": "^5.9.3",
+    "zotero-plugin-scaffold": "^0.8.2",
+    "zotero-types": "^4.1.0-beta.4"
+  },
+  "prettier": {
+    "printWidth": 80,
+    "tabWidth": 2,
+    "endOfLine": "lf",
+    "overrides": [
+      {
+        "files": [
+          "*.xhtml"
+        ],
+        "options": {
+          "htmlWhitespaceSensitivity": "css"
+        }
+      }
+    ]
+  }
+}

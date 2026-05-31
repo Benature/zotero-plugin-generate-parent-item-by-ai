@@ -1,0 +1,6 @@
+node_modules/
+.scaffold/
+build/
+*.xpi
+.DS_Store
+package-lock.json
