@@ -6,7 +6,8 @@
 
 ## Features
 
-- Right-click any standalone PDF attachment → **Generate Parent Item**
+- Right-click standalone PDF attachment(s) → **Generate Parent Item** (supports single item or multi-selection batch generation)
+- **Batch Processing**: Review metadata item-by-item, apply to all remaining with one click, or skip items with batch control, accompanied by an overall progress bar
 - **Two-phase extraction** keeps costs low: Phase 1 uses only the filename; page text is extracted only when needed
 - AI selects the best-fit Zotero item type automatically (journal article, book, report, thesis, …), or you can force a specific type
 - Interactive preview: accept, improve with feedback, or cancel before writing anything to your library

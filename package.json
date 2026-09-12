@@ -1,7 +1,7 @@
 {
   "name": "parent-item-generator",
   "type": "module",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "AI-assisted parent-item generation for standalone Zotero attachments.",
   "config": {
     "addonName": "Parent Item Generator",
