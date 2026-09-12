@@ -52,14 +52,22 @@ Open **Zotero → Preferences → Parent Item Generator**.
 
 | Field | Description |
 |---|---|
-| Base URL | Root URL of an OpenAI-compatible API, e.g. `https://api.openai.com/v1` |
-| API Key | Your API key |
-| Model | Model name, e.g. `gpt-4o-mini` |
+| API Format | Protocol format: `OpenAI (/chat/completions)`, `Google Gemini (/models/{model}:generateContent)`, `Anthropic Claude (/messages)`, or `Antigravity Native (/v1internal:generateContent)` |
+| Base URL | Root URL of the API (e.g., `https://api.openai.com/v1`, `https://generativelanguage.googleapis.com/v1beta`, `https://api.anthropic.com/v1`, or your local/remote Antigravity proxy) |
+| API Key | Your API key or bearer token |
+| Model | Model dropdown selector (automatically pulled from provider API, with ↻ refresh button and custom model option) |
 | Forced Item Type | Lock the Zotero item type; leave blank to let the AI decide |
 | System Prompt | Override the built-in system instructions; empty = built-in default |
 | User Prompt Template | Override the built-in user message; empty = built-in default |
 
-Click **Test Connection** to verify that the Base URL and API Key are working.
+Click **Test Connection** to verify that the Base URL, API Key, and Model are working.
+
+### Supported API Formats & Antigravity Setup
+
+- **OpenAI compatible** (`openai`): Default format, sends requests to `${baseURL}/chat/completions`.
+- **Google Gemini** (`gemini`): For Google AI Studio or Antigravity Gemini v1beta proxies, sends requests to `${baseURL}/models/${model}:generateContent`. Automatically strips reasoning/thinking blocks from models like Gemini 2.5/3.x.
+- **Anthropic Claude** (`claude`): For Anthropic or Antigravity Claude v1 proxies, sends requests to `${baseURL}/messages` with `anthropic-version: 2023-06-01`.
+- **Antigravity Native** (`antigravity`): For Google Cloud Code / Antigravity native internal endpoint (`/v1internal:generateContent`). Automatically handles nested client metadata and candidate parts extraction.
 
 ### User Prompt Template Placeholders
 

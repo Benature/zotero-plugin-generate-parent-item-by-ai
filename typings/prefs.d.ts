@@ -8,6 +8,7 @@ declare namespace _ZoteroTypes {
   interface Prefs {
     PluginPrefsMap: {
       "baseURL": string;
+      "apiFormat": string;
       "apiKey": string;
       "model": string;
       "forcedItemType": string;

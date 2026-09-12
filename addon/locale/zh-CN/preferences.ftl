@@ -1,5 +1,20 @@
 pig-prefs-llm-header = LLM 连接设置
 
+pig-prefs-api-format-label =
+    .value = API 格式
+
+pig-prefs-api-format-openai =
+    .label = OpenAI 兼容
+
+pig-prefs-api-format-gemini =
+    .label = Google Gemini / Antigravity (v1beta)
+
+pig-prefs-api-format-claude =
+    .label = Anthropic Claude / Antigravity (v1)
+
+pig-prefs-api-format-antigravity =
+    .label = Google Antigravity (v1internal)
+
 pig-prefs-base-url-label =
     .value = Base URL
 
@@ -8,6 +23,10 @@ pig-prefs-api-key-label =
 
 pig-prefs-model-label =
     .value = 模型
+
+pig-prefs-refresh-models-btn =
+    .label = ↻
+    .tooltiptext = 获取 / 刷新可用模型列表
 
 pig-prefs-test-btn =
     .label = 测试连接

@@ -1,8 +1,21 @@
-export function registerPreferencesAPI(): void {
-  (addon.api as Record<string, unknown>).preferences = { testConnection };
+export interface ConnectionTestResult {
+  message: string;
+  models: string[];
 }
 
-async function testConnection(): Promise<string> {
+export function registerPreferencesAPI(): void {
+  (addon.api as Record<string, unknown>).preferences = {
+    fetchModelList,
+    testConnection,
+  };
+}
+
+async function fetchModelList(): Promise<string[]> {
+  const res = await testConnection();
+  return res.models;
+}
+
+async function testConnection(): Promise<ConnectionTestResult> {
   const prefix = addon.data.config.prefsPrefix;
   const baseURL = String(
     Zotero.Prefs.get(`${prefix}.baseURL`, true) ?? "",
@@ -13,22 +26,46 @@ async function testConnection(): Promise<string> {
   const model = String(
     Zotero.Prefs.get(`${prefix}.model`, true) ?? "",
   ).trim();
+  const apiFormat = String(
+    Zotero.Prefs.get(`${prefix}.apiFormat`, true) ?? "openai",
+  ).trim();
 
   if (!baseURL) {
-    return "Base URL is not set.";
+    return { message: "Base URL is not set.", models: [] };
   }
   if (!apiKey) {
-    return "API Key is not set.";
+    return { message: "API Key is not set.", models: [] };
   }
 
-  const endpoint = `${baseURL.replace(/\/+$/, "")}/models`;
+  const cleanBase = baseURL.replace(/\/+$/, "");
+  let endpoint = `${cleanBase}/models`;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (apiFormat === "gemini") {
+    headers["x-goog-api-key"] = apiKey;
+    headers["Authorization"] = `Bearer ${apiKey}`;
+    if (!endpoint.includes("key=")) {
+      const delimiter = endpoint.includes("?") ? "&" : "?";
+      endpoint = `${endpoint}${delimiter}key=${encodeURIComponent(apiKey)}`;
+    }
+  } else if (apiFormat === "claude") {
+    headers["x-api-key"] = apiKey;
+    headers["anthropic-version"] = "2023-06-01";
+    headers["Authorization"] = `Bearer ${apiKey}`;
+  } else if (apiFormat === "antigravity") {
+    headers["Authorization"] = `Bearer ${apiKey}`;
+    headers["x-goog-api-key"] = apiKey;
+  } else {
+    // openai
+    headers["Authorization"] = `Bearer ${apiKey}`;
+  }
+
   let response: Response;
   try {
     response = await fetch(endpoint, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
+      headers,
       method: "GET",
     });
   } catch (err) {
@@ -48,24 +85,64 @@ async function testConnection(): Promise<string> {
     string,
     unknown
   > | null;
-  const modelList: string[] = [];
-  if (json && Array.isArray(json.data)) {
-    for (const entry of json.data as Array<Record<string, unknown>>) {
-      if (typeof entry.id === "string") {
-        modelList.push(entry.id);
-      }
-    }
+  const modelList = extractModelList(json);
+
+  const cleanModel = model.replace(/^models\//, "");
+  const modelFound =
+    Boolean(model) &&
+    (modelList.includes(model) ||
+      modelList.includes(cleanModel) ||
+      modelList.some(
+        (m) => m.toLowerCase() === cleanModel.toLowerCase(),
+      ));
+
+  if (modelList.length === 0) {
+    return {
+      message: "Connected. (No model list returned)",
+      models: [],
+    };
   }
 
-  const modelFound = model && modelList.includes(model);
-  if (modelList.length === 0) {
-    return "Connected. (No model list returned)";
-  }
+  const allModelsStr = modelList.join(", ");
+
   if (!model) {
-    return `Connected. Available models: ${modelList.slice(0, 5).join(", ")}${modelList.length > 5 ? ` (+${modelList.length - 5} more)` : ""}`;
+    return {
+      message: `Connected. Available models (${modelList.length}): ${allModelsStr}`,
+      models: modelList,
+    };
   }
   if (modelFound) {
-    return `Connected. Model "${model}" found.`;
+    return {
+      message: `Connected. Model "${model}" found. Available models (${modelList.length}): ${allModelsStr}`,
+      models: modelList,
+    };
   }
-  return `Connected, but model "${model}" not found in list. Available: ${modelList.slice(0, 3).join(", ")}${modelList.length > 3 ? "…" : ""}`;
+  return {
+    message: `Connected, but model "${model}" not found in list. Available models (${modelList.length}): ${allModelsStr}`,
+    models: modelList,
+  };
+}
+
+function extractModelList(json: Record<string, unknown> | null): string[] {
+  if (!json) return [];
+  const modelSet = new Set<string>();
+  const rawList = Array.isArray(json.data)
+    ? json.data
+    : Array.isArray(json.models)
+      ? json.models
+      : [];
+
+  for (const entry of rawList as Array<Record<string, unknown>>) {
+    if (!entry || typeof entry !== "object") continue;
+    const rawName =
+      typeof entry.id === "string"
+        ? entry.id.trim()
+        : typeof entry.name === "string"
+          ? entry.name.trim()
+          : "";
+    if (!rawName) continue;
+    const cleanName = rawName.replace(/^models\//, "");
+    modelSet.add(cleanName);
+  }
+  return Array.from(modelSet);
 }

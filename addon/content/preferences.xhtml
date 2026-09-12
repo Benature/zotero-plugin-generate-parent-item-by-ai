@@ -7,6 +7,18 @@
     <label class="header" data-l10n-id="pig-prefs-llm-header"/>
 
     <hbox align="center" style="margin-bottom:6px">
+      <label style="min-width:110px" data-l10n-id="pig-prefs-api-format-label"/>
+      <menulist id="pig-api-format" style="margin-inline-start:8px;min-width:220px">
+        <menupopup id="pig-api-format-popup">
+          <menuitem value="openai" data-l10n-id="pig-prefs-api-format-openai"/>
+          <menuitem value="gemini" data-l10n-id="pig-prefs-api-format-gemini"/>
+          <menuitem value="claude" data-l10n-id="pig-prefs-api-format-claude"/>
+          <menuitem value="antigravity" data-l10n-id="pig-prefs-api-format-antigravity"/>
+        </menupopup>
+      </menulist>
+    </hbox>
+
+    <hbox align="center" style="margin-bottom:6px">
       <label style="min-width:110px" data-l10n-id="pig-prefs-base-url-label"/>
       <html:input id="pig-base-url" type="text"
                   style="flex:1;margin-inline-start:8px"/>
@@ -20,13 +32,18 @@
 
     <hbox align="center" style="margin-bottom:6px">
       <label style="min-width:110px" data-l10n-id="pig-prefs-model-label"/>
-      <html:input id="pig-model" type="text"
-                  style="flex:1;margin-inline-start:8px"/>
+      <menulist id="pig-model" style="margin-inline-start:8px;flex:1">
+        <menupopup id="pig-model-popup"/>
+      </menulist>
+      <button id="pig-refresh-models-btn" label="↻"
+              data-l10n-id="pig-prefs-refresh-models-btn"
+              style="margin-inline-start:6px;min-width:32px"/>
     </hbox>
 
-    <hbox align="center">
+    <hbox align="start" style="margin-top:4px">
       <button id="pig-test-btn" data-l10n-id="pig-prefs-test-btn"/>
-      <label id="pig-test-result" style="margin-inline-start:10px;flex:1"/>
+      <description id="pig-test-result"
+                   style="margin-inline-start:10px;flex:1;white-space:normal;word-break:break-word;user-select:text;-moz-user-select:text;line-height:1.4;margin-top:3px"/>
     </hbox>
   </groupbox>
 

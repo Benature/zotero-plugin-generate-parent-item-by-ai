@@ -8,6 +8,7 @@ export type PDFTextSample = {
 };
 
 type LLMSettings = {
+  apiFormat: string;
   apiKey: string;
   baseURL: string;
   model: string;
@@ -97,15 +98,18 @@ full name in lastName and leave firstName empty
 
 Common Zotero fields by type:
   journalArticle: title, date, publicationTitle, volume, issue, pages, DOI, ISSN, abstractNote
-  report: title, date, reportType, institution, seriesTitle, seriesNumber
-  book: title, date, publisher, place, ISBN, numPages, edition
+  report: title, date, reportType, reportNumber, institution, place, seriesTitle, seriesNumber, pages, DOI, url
+  book: title, date, publisher, place, ISBN, numPages, edition, series, seriesNumber
   thesis: title, date, university, thesisType, numPages
-  conferencePaper: title, date, conferenceName, proceedingsTitle, pages, DOI
-  preprint: title, date, repository, DOI
-  bookSection: title, date, bookTitle, publisher, place, pages
+  conferencePaper: title, date, conferenceName, proceedingsTitle, pages, DOI, series
+  preprint: title, date, repository, DOI, series, seriesNumber
+  bookSection: title, date, bookTitle, publisher, place, pages, series, seriesNumber
   webpage: title, date, websiteTitle, url, accessDate
 
-Use exact Zotero field names. The "extra" field (always valid) may hold additional metadata.`;
+CRITICAL FIELD RULES:
+1. Field names must use exact Zotero camelCase (e.g. "seriesTitle", "seriesNumber", "reportNumber", "reportType"). Do NOT use spaces or snake_case.
+2. For "report" items, the series title MUST be placed in "seriesTitle" and series number in "seriesNumber" (and report number in "reportNumber"). NEVER put seriesTitle, seriesNumber, or reportNumber in the "extra" field.
+3. The "extra" field is strictly reserved for metadata that has no native Zotero field.`;
 
 export const DEFAULT_USER_PROMPT_TEMPLATE = `Please identify the item type and extract metadata.
 
@@ -349,6 +353,43 @@ async function requestMetadata(
   filenameOnly?: boolean,
 ): Promise<ParsedMetadata> {
   const settings = readLLMSettings();
+  const promptText = buildPrompt(
+    sample,
+    settings,
+    feedback,
+    previousMetadata,
+    filenameOnly,
+  );
+
+  let content: string;
+  switch (settings.apiFormat.toLowerCase()) {
+    case "gemini":
+      content = await requestGemini(promptText, settings);
+      break;
+    case "claude":
+      content = await requestClaude(promptText, settings);
+      break;
+    case "antigravity":
+      content = await requestAntigravityInternal(promptText, settings);
+      break;
+    case "openai":
+    default:
+      content = await requestOpenAI(promptText, settings);
+      break;
+  }
+
+  const parsed = parseMetadataJSON(content);
+  return validateAndFilterFields(
+    settings.forcedItemType
+      ? { ...parsed, itemType: settings.forcedItemType }
+      : parsed,
+  );
+}
+
+async function requestOpenAI(
+  promptText: string,
+  settings: LLMSettings,
+): Promise<string> {
   const endpoint = `${settings.baseURL.replace(/\/+$/, "")}/chat/completions`;
   const response = await fetch(endpoint, {
     body: JSON.stringify({
@@ -359,7 +400,7 @@ async function requestMetadata(
         },
         {
           role: "user",
-          content: buildPrompt(sample, settings, feedback, previousMetadata, filenameOnly),
+          content: promptText,
         },
       ],
       model: settings.model,
@@ -376,28 +417,250 @@ async function requestMetadata(
   const responseText = await response.text();
   if (!response.ok) {
     throw new Error(
-      `LLM request failed (${response.status} ${response.statusText}): ${truncateForLog(
+      `OpenAI request failed (${response.status} ${response.statusText}): ${truncateForLog(
         responseText,
       )}`,
     );
   }
 
-  const responseJSON = parseObjectJSON(responseText, "LLM HTTP response");
+  const responseJSON = parseObjectJSON(responseText, "OpenAI HTTP response");
   const content = responseJSON.choices?.[0]?.message?.content;
   if (typeof content !== "string") {
-    throw new Error("LLM response did not contain choices[0].message.content.");
+    throw new Error("OpenAI response did not contain choices[0].message.content.");
+  }
+  return content;
+}
+
+async function requestGemini(
+  promptText: string,
+  settings: LLMSettings,
+): Promise<string> {
+  const base = settings.baseURL.replace(/\/+$/, "");
+  const cleanModel = settings.model.replace(/^models\//, "");
+  let endpoint = base.endsWith("/models")
+    ? `${base}/${encodeURIComponent(cleanModel)}:generateContent`
+    : `${base}/models/${encodeURIComponent(cleanModel)}:generateContent`;
+
+  if (settings.apiKey) {
+    const separator = endpoint.includes("?") ? "&" : "?";
+    endpoint += `${separator}key=${encodeURIComponent(settings.apiKey)}`;
   }
 
-  const parsed = parseMetadataJSON(content);
-  return validateAndFilterFields(
-    settings.forcedItemType
-      ? { ...parsed, itemType: settings.forcedItemType }
-      : parsed,
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "x-goog-api-key": settings.apiKey,
+  };
+  if (settings.apiKey) {
+    headers["Authorization"] = `Bearer ${settings.apiKey}`;
+  }
+
+  const response = await fetch(endpoint, {
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [{ text: promptText }],
+          role: "user",
+        },
+      ],
+      generationConfig: {
+        responseMimeType: "application/json",
+        temperature: 0.2,
+      },
+      systemInstruction: {
+        parts: [{ text: settings.systemPrompt }],
+      },
+    }),
+    headers,
+    method: "POST",
+  });
+
+  const responseText = await response.text();
+  if (!response.ok) {
+    throw new Error(
+      `Gemini request failed (${response.status} ${response.statusText}): ${truncateForLog(
+        responseText,
+      )}`,
+    );
+  }
+
+  const responseJSON = parseObjectJSON(responseText, "Gemini HTTP response");
+  const candidate = responseJSON.candidates?.[0];
+  if (!candidate) {
+    throw new Error("Gemini response did not contain any candidates.");
+  }
+
+  const parts = candidate.content?.parts;
+  if (!Array.isArray(parts) || parts.length === 0) {
+    throw new Error("Gemini response candidate did not contain content.parts.");
+  }
+
+  const nonThoughtParts = parts.filter(
+    (p: unknown) => isRecord(p) && !p.thought && typeof p.text === "string",
   );
+  const selectedParts = nonThoughtParts.length > 0 ? nonThoughtParts : parts;
+  const content = selectedParts
+    .map((p: unknown) =>
+      isRecord(p) && typeof p.text === "string" ? p.text : "",
+    )
+    .join("")
+    .trim();
+
+  if (!content) {
+    throw new Error(
+      "Gemini response did not contain text content in candidate parts.",
+    );
+  }
+  return content;
+}
+
+async function requestClaude(
+  promptText: string,
+  settings: LLMSettings,
+): Promise<string> {
+  const endpoint = `${settings.baseURL.replace(/\/+$/, "")}/messages`;
+  const headers: Record<string, string> = {
+    "anthropic-version": "2023-06-01",
+    "Content-Type": "application/json",
+    "x-api-key": settings.apiKey,
+  };
+  if (settings.apiKey) {
+    headers["Authorization"] = `Bearer ${settings.apiKey}`;
+  }
+
+  const response = await fetch(endpoint, {
+    body: JSON.stringify({
+      max_tokens: 4096,
+      messages: [
+        {
+          content: promptText,
+          role: "user",
+        },
+      ],
+      model: settings.model,
+      system: settings.systemPrompt,
+      temperature: 0.2,
+    }),
+    headers,
+    method: "POST",
+  });
+
+  const responseText = await response.text();
+  if (!response.ok) {
+    throw new Error(
+      `Claude request failed (${response.status} ${response.statusText}): ${truncateForLog(
+        responseText,
+      )}`,
+    );
+  }
+
+  const responseJSON = parseObjectJSON(responseText, "Claude HTTP response");
+  const contentBlocks = responseJSON.content;
+  if (!Array.isArray(contentBlocks) || contentBlocks.length === 0) {
+    throw new Error("Claude response did not contain content blocks.");
+  }
+
+  const textBlocks = contentBlocks.filter(
+    (b: unknown) => isRecord(b) && b.type === "text" && typeof b.text === "string",
+  );
+  const content = textBlocks
+    .map((b: any) => b.text)
+    .join("")
+    .trim();
+
+  if (!content) {
+    throw new Error("Claude response did not contain text in content blocks.");
+  }
+  return content;
+}
+
+async function requestAntigravityInternal(
+  promptText: string,
+  settings: LLMSettings,
+): Promise<string> {
+  const endpoint = `${settings.baseURL.replace(/\/+$/, "")}/v1internal:generateContent`;
+  const cleanModel = settings.model.replace(/^models\//, "");
+
+  const response = await fetch(endpoint, {
+    body: JSON.stringify({
+      model: cleanModel,
+      project: "",
+      request: {
+        contents: [
+          {
+            parts: [{ text: promptText }],
+            role: "user",
+          },
+        ],
+        generationConfig: {
+          responseMimeType: "application/json",
+          temperature: 0.2,
+        },
+        systemInstruction: {
+          parts: [{ text: settings.systemPrompt }],
+        },
+      },
+      userAgent: "antigravity",
+    }),
+    headers: {
+      Authorization: `Bearer ${settings.apiKey}`,
+      "Content-Type": "application/json",
+      "User-Agent": "antigravity",
+    },
+    method: "POST",
+  });
+
+  const responseText = await response.text();
+  if (!response.ok) {
+    throw new Error(
+      `Antigravity internal request failed (${response.status} ${response.statusText}): ${truncateForLog(
+        responseText,
+      )}`,
+    );
+  }
+
+  const responseJSON = parseObjectJSON(
+    responseText,
+    "Antigravity internal HTTP response",
+  );
+  const root = isRecord(responseJSON.response)
+    ? responseJSON.response
+    : responseJSON;
+  const candidate = root.candidates?.[0];
+  if (!candidate) {
+    throw new Error("Antigravity response did not contain any candidates.");
+  }
+
+  const parts = candidate.content?.parts;
+  if (!Array.isArray(parts) || parts.length === 0) {
+    throw new Error(
+      "Antigravity response candidate did not contain content.parts.",
+    );
+  }
+
+  const nonThoughtParts = parts.filter(
+    (p: unknown) => isRecord(p) && !p.thought && typeof p.text === "string",
+  );
+  const selectedParts = nonThoughtParts.length > 0 ? nonThoughtParts : parts;
+  const content = selectedParts
+    .map((p: unknown) =>
+      isRecord(p) && typeof p.text === "string" ? p.text : "",
+    )
+    .join("")
+    .trim();
+
+  if (!content) {
+    throw new Error(
+      "Antigravity response did not contain text content in candidate parts.",
+    );
+  }
+  return content;
 }
 
 function readLLMSettings(): LLMSettings {
   const prefix = addon.data.config.prefsPrefix;
+  const apiFormat = String(
+    Zotero.Prefs.get(`${prefix}.apiFormat`, true) ?? "openai",
+  ).trim() || "openai";
   const apiKey = String(Zotero.Prefs.get(`${prefix}.apiKey`, true) ?? "").trim();
   const baseURL = String(
     Zotero.Prefs.get(`${prefix}.baseURL`, true) ?? "",
@@ -426,6 +689,7 @@ function readLLMSettings(): LLMSettings {
   ).trim();
 
   return {
+    apiFormat,
     apiKey,
     baseURL,
     forcedItemType: String(
@@ -529,17 +793,36 @@ function toLLMJSON(
   };
 }
 
+function extractJSONString(raw: string): string {
+  let text = raw.trim();
+
+  // If the whole string starts with code fence, strip outer fence
+  if (text.startsWith("```")) {
+    text = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  }
+
+  // If it's already a valid JSON object starting with { and ending with }
+  if (text.startsWith("{") && text.endsWith("}")) {
+    return text;
+  }
+
+  // Otherwise, find outermost { and }
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    return text.substring(firstBrace, lastBrace + 1).trim();
+  }
+
+  return text;
+}
+
 function parseMetadataJSON(content: string): ParsedMetadata {
-  const trimmed = content.trim();
-  if (
-    !trimmed.startsWith("{") ||
-    !trimmed.endsWith("}") ||
-    trimmed.startsWith("```")
-  ) {
+  const jsonStr = extractJSONString(content);
+  if (!jsonStr.startsWith("{") || !jsonStr.endsWith("}")) {
     throw new Error("LLM returned non-JSON content.");
   }
 
-  const value = parseObjectJSON(trimmed, "LLM metadata JSON");
+  const value = parseObjectJSON(jsonStr, "LLM metadata JSON");
 
   if (!hasOwn(value, "itemType") || typeof value.itemType !== "string") {
     throw new Error('LLM metadata JSON is missing or has invalid "itemType".');
@@ -592,6 +875,288 @@ function parseMetadataJSON(content: string): ParsedMetadata {
   };
 }
 
+const COMMON_FIELD_ALIASES: Record<string, string> = {
+  abstract: "abstractNote",
+  abstractnote: "abstractNote",
+  date: "date",
+  doi: "DOI",
+  isbn: "ISBN",
+  issn: "ISSN",
+  issue: "issue",
+  issuenumber: "issue",
+  issueno: "issue",
+  journal: "publicationTitle",
+  journaltitle: "publicationTitle",
+  language: "language",
+  magazine: "publicationTitle",
+  page: "pages",
+  pages: "pages",
+  pagination: "pages",
+  publicationdate: "date",
+  publishdate: "date",
+  shorttitle: "shortTitle",
+  title: "title",
+  url: "url",
+  vol: "volume",
+  volume: "volume",
+  // Chinese aliases
+  "标题": "title",
+  "题名": "title",
+  "日期": "date",
+  "出版日期": "date",
+  "发表日期": "date",
+  "摘要": "abstractNote",
+  "机构": "institution",
+  "机构组织": "institution",
+  "组织机构": "institution",
+  "出版者": "publisher",
+  "出版社": "publisher",
+  "大学": "university",
+  "学校": "university",
+  "期刊": "publicationTitle",
+  "刊名": "publicationTitle",
+  "期刊名称": "publicationTitle",
+  "卷": "volume",
+  "卷号": "volume",
+  "期": "issue",
+  "期号": "issue",
+  "页码": "pages",
+  "页": "pages",
+  "起止页码": "pages",
+  "语言": "language",
+  "网址": "url",
+  "链接": "url",
+  "报告类型": "reportType",
+  "报告编号": "reportNumber",
+  "报告号": "reportNumber",
+  "系列标题": "seriesTitle",
+  "系列名称": "seriesTitle",
+  "系列编号": "seriesNumber",
+  "系列号": "seriesNumber",
+  "丛书编号": "seriesNumber",
+};
+
+export function resolveCanonicalFieldName(
+  rawKey: string,
+  itemType: string,
+  validFieldNames: Set<string>,
+): string | undefined {
+  const trimmed = rawKey.trim();
+  if (!trimmed) return undefined;
+
+  // 1. Direct exact match
+  if (validFieldNames.has(trimmed)) {
+    return trimmed;
+  }
+
+  // 2. Normalized alphanumeric lowercase match against valid fields
+  const cleanKey = trimmed.toLowerCase().replace(/[\s_\-]+/g, "");
+  for (const valid of validFieldNames) {
+    if (valid.toLowerCase().replace(/[\s_\-]+/g, "") === cleanKey) {
+      return valid;
+    }
+  }
+
+  // 3. Item-type specific rules
+  if (itemType === "report") {
+    if (
+      cleanKey === "series" ||
+      cleanKey === "seriestitle" ||
+      cleanKey === "seriesname" ||
+      trimmed === "系列" ||
+      trimmed === "系列标题" ||
+      trimmed === "系列名称"
+    ) {
+      if (validFieldNames.has("seriesTitle")) return "seriesTitle";
+    }
+    if (
+      cleanKey === "seriesnumber" ||
+      cleanKey === "seriesno" ||
+      cleanKey === "seriesnum" ||
+      trimmed === "系列编号" ||
+      trimmed === "系列号" ||
+      trimmed === "丛书编号"
+    ) {
+      if (validFieldNames.has("seriesNumber")) return "seriesNumber";
+    }
+    if (
+      cleanKey === "reportnumber" ||
+      cleanKey === "reportno" ||
+      cleanKey === "reportnum" ||
+      trimmed === "报告编号" ||
+      trimmed === "报告号"
+    ) {
+      if (validFieldNames.has("reportNumber")) return "reportNumber";
+    }
+    if (cleanKey === "number" || trimmed === "编号") {
+      if (validFieldNames.has("reportNumber")) return "reportNumber";
+    }
+    if (
+      cleanKey === "institution" ||
+      cleanKey === "organization" ||
+      cleanKey === "org" ||
+      cleanKey === "authororg" ||
+      cleanKey === "publisher" ||
+      trimmed === "机构" ||
+      trimmed === "机构组织" ||
+      trimmed === "组织机构"
+    ) {
+      if (validFieldNames.has("institution")) return "institution";
+    }
+    if (
+      cleanKey === "reporttype" ||
+      cleanKey === "type" ||
+      trimmed === "报告类型"
+    ) {
+      if (validFieldNames.has("reportType")) return "reportType";
+    }
+  } else {
+    // For other types
+    if (
+      cleanKey === "series" ||
+      cleanKey === "seriestitle" ||
+      cleanKey === "seriesname" ||
+      trimmed === "系列" ||
+      trimmed === "系列标题"
+    ) {
+      if (validFieldNames.has("series")) return "series";
+      if (validFieldNames.has("seriesTitle")) return "seriesTitle";
+    }
+    if (
+      cleanKey === "seriesnumber" ||
+      cleanKey === "seriesno" ||
+      cleanKey === "seriesnum" ||
+      trimmed === "系列编号"
+    ) {
+      if (validFieldNames.has("seriesNumber")) return "seriesNumber";
+    }
+  }
+
+  // 4. CSL variable mappings (useful when LLM adopts CSL conventions)
+  if (cleanKey === "collectiontitle") {
+    if (validFieldNames.has("seriesTitle")) return "seriesTitle";
+    if (validFieldNames.has("series")) return "series";
+  }
+  if (cleanKey === "collectionnumber") {
+    if (validFieldNames.has("seriesNumber")) return "seriesNumber";
+  }
+
+  // 5. Common aliases lookup
+  const mapped =
+    COMMON_FIELD_ALIASES[cleanKey] || COMMON_FIELD_ALIASES[trimmed];
+  if (mapped && validFieldNames.has(mapped)) {
+    return mapped;
+  }
+
+  return undefined;
+}
+
+export function promoteExtraFields(
+  itemType: string,
+  fields: Record<string, string>,
+  validFieldNames: Set<string>,
+): Record<string, string> {
+  const extra = fields.extra;
+  if (!extra || typeof extra !== "string") {
+    return fields;
+  }
+
+  const lines = extra.split(/\r?\n/);
+  const remainingLines: string[] = [];
+  const updatedFields: Record<string, string> = { ...fields };
+
+  for (const line of lines) {
+    const match = line.match(/^([A-Za-z0-9_\-\u4e00-\u9fa5\s]+)[:：]\s*(.+)$/);
+    if (!match) {
+      remainingLines.push(line);
+      continue;
+    }
+
+    const [, rawKey, rawVal] = match;
+    const value = rawVal.trim();
+    const canonicalKey = resolveCanonicalFieldName(
+      rawKey,
+      itemType,
+      validFieldNames,
+    );
+
+    if (canonicalKey && canonicalKey !== "extra" && value) {
+      // If the target field doesn't already have a value, promote it
+      if (!updatedFields[canonicalKey]) {
+        updatedFields[canonicalKey] = value;
+        try {
+          Zotero.debug(
+            `Parent Item Generator: promoted extra "${rawKey}: ${value}" to field "${canonicalKey}"`,
+          );
+        } catch {
+          // Ignore debug logger issues in test environments
+        }
+      }
+      // Successfully recognized and handled, don't keep in extra
+    } else {
+      remainingLines.push(line);
+    }
+  }
+
+  const newExtra = remainingLines.join("\n").trim();
+  if (newExtra) {
+    updatedFields.extra = newExtra;
+  } else {
+    delete updatedFields.extra;
+  }
+
+  return updatedFields;
+}
+
+export function normalizeAndFilterFields(
+  itemType: string,
+  rawFields: Record<string, string>,
+  validFieldNames: Set<string>,
+): Record<string, string> {
+  // First, extract and promote any recognized fields from extra
+  const fieldsWithPromotedExtra = promoteExtraFields(
+    itemType,
+    rawFields,
+    validFieldNames,
+  );
+
+  const filteredFields: Record<string, string> = {};
+
+  for (const [rawKey, rawValue] of Object.entries(fieldsWithPromotedExtra)) {
+    const value =
+      typeof rawValue === "string"
+        ? rawValue.trim()
+        : String(rawValue ?? "").trim();
+    if (!value) continue;
+
+    if (rawKey === "extra") {
+      filteredFields.extra = value;
+      continue;
+    }
+
+    const canonicalKey = resolveCanonicalFieldName(
+      rawKey,
+      itemType,
+      validFieldNames,
+    );
+    if (canonicalKey) {
+      if (!filteredFields[canonicalKey]) {
+        filteredFields[canonicalKey] = value;
+      }
+    } else {
+      try {
+        Zotero.debug(
+          `Parent Item Generator: field "${rawKey}" is not valid for type "${itemType}", ignoring`,
+        );
+      } catch {
+        // Ignore debug logger issues in test environments
+      }
+    }
+  }
+
+  return filteredFields;
+}
+
 function validateAndFilterFields(metadata: ParsedMetadata): ParsedMetadata {
   const typeName = metadata.itemType;
   const typeID = Zotero.ItemTypes.getID(typeName) as number | undefined | null;
@@ -613,16 +1178,11 @@ function validateAndFilterFields(metadata: ParsedMetadata): ParsedMetadata {
     Zotero.logError(err);
   }
 
-  const filteredFields: Record<string, string> = {};
-  for (const [key, value] of Object.entries(metadata.fields)) {
-    if (validFieldNames.has(key)) {
-      filteredFields[key] = value;
-    } else {
-      Zotero.debug(
-        `Parent Item Generator: field "${key}" is not valid for type "${typeName}", ignoring`,
-      );
-    }
-  }
+  const filteredFields = normalizeAndFilterFields(
+    typeName,
+    metadata.fields,
+    validFieldNames,
+  );
 
   const validCreatorTypes = new Set<string>();
   try {
@@ -667,7 +1227,7 @@ async function createParentItem(
   newItem.libraryID = pdfItem.libraryID;
 
   for (const [key, value] of Object.entries(metadata.fields)) {
-    if (value) {
+    if (value && key !== "extra") {
       try {
         newItem.setField(key, value);
       } catch (err) {
@@ -694,12 +1254,16 @@ async function createParentItem(
     addTagIfMissing(newItem, tag);
   }
 
-  if (metadata.reason) {
-    const existing = (newItem.getField("extra") as string | undefined) ?? "";
-    const reasonLine = `AI Reason: ${metadata.reason}`;
-    const newExtra = existing ? `${existing}\n${reasonLine}` : reasonLine;
+  const extraParts: string[] = [];
+  if (metadata.fields.extra?.trim()) {
+    extraParts.push(metadata.fields.extra.trim());
+  }
+  if (metadata.reason?.trim()) {
+    extraParts.push(`AI Reason: ${metadata.reason.trim()}`);
+  }
+  if (extraParts.length > 0) {
     try {
-      newItem.setField("extra", newExtra);
+      newItem.setField("extra", extraParts.join("\n"));
     } catch {
       // extra field may not exist for some item types
     }

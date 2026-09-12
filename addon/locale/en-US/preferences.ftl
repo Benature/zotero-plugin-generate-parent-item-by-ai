@@ -1,5 +1,20 @@
 pig-prefs-llm-header = LLM Connection
 
+pig-prefs-api-format-label =
+    .value = API Format
+
+pig-prefs-api-format-openai =
+    .label = OpenAI Compatible
+
+pig-prefs-api-format-gemini =
+    .label = Google Gemini / Antigravity (v1beta)
+
+pig-prefs-api-format-claude =
+    .label = Anthropic Claude / Antigravity (v1)
+
+pig-prefs-api-format-antigravity =
+    .label = Google Antigravity (v1internal)
+
 pig-prefs-base-url-label =
     .value = Base URL
 
@@ -8,6 +23,10 @@ pig-prefs-api-key-label =
 
 pig-prefs-model-label =
     .value = Model
+
+pig-prefs-refresh-models-btn =
+    .label = ↻
+    .tooltiptext = Fetch / refresh available models
 
 pig-prefs-test-btn =
     .label = Test Connection

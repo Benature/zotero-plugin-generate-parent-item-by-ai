@@ -4,6 +4,11 @@
 // @ts-nocheck
 export type FluentMessageId =
   | 'generate-parent-item'
+  | 'pig-prefs-api-format-antigravity'
+  | 'pig-prefs-api-format-claude'
+  | 'pig-prefs-api-format-gemini'
+  | 'pig-prefs-api-format-label'
+  | 'pig-prefs-api-format-openai'
   | 'pig-prefs-api-key-label'
   | 'pig-prefs-auto-item-type'
   | 'pig-prefs-base-url-label'
@@ -12,6 +17,7 @@ export type FluentMessageId =
   | 'pig-prefs-llm-header'
   | 'pig-prefs-model-label'
   | 'pig-prefs-prompts-header'
+  | 'pig-prefs-refresh-models-btn'
   | 'pig-prefs-system-prompt-label'
   | 'pig-prefs-test-btn'
   | 'pig-prefs-user-prompt-label';

@@ -1,7 +1,7 @@
 {
   "name": "parent-item-generator",
   "type": "module",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "AI-assisted parent-item generation for standalone Zotero attachments.",
   "config": {
     "addonName": "Parent Item Generator",
@@ -12,10 +12,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/benature/parent-item-generator.git"
+    "url": "https://github.com/Benature/zotero-plugin-generate-parent-item-by-ai.git"
   },
   "author": "benature",
-  "homepage": "https://github.com/benature/parent-item-generator#readme",
+  "homepage": "https://github.com/Benature/zotero-plugin-generate-parent-item-by-ai#readme",
   "license": "AGPL-3.0-or-later",
   "scripts": {
     "start": "zotero-plugin serve",

@@ -46,14 +46,22 @@
 
 | 字段 | 说明 |
 |---|---|
-| Base URL | OpenAI 兼容 API 的根地址，如 `https://api.openai.com/v1` |
-| API Key | 你的 API 密钥 |
-| Model | 模型名称，如 `gpt-4o-mini` |
+| API 格式 | 协议格式：`OpenAI (/chat/completions)`、`Google Gemini (/models/{model}:generateContent)`、`Anthropic Claude (/messages)` 或 `Antigravity 原生 (/v1internal:generateContent)` |
+| Base URL | API 根地址（如 `https://api.openai.com/v1`、`https://generativelanguage.googleapis.com/v1beta`、`https://api.anthropic.com/v1` 或本地/远端 Antigravity 代理） |
+| API Key | 你的 API 密钥或 Bearer 令牌 |
+| Model | 模型下拉选择框（自动从远端服务拉取模型列表，附带 ↻ 刷新按钮与自定义模型支持） |
 | Forced Item Type | 强制指定条目类型，留空则由 AI 决定 |
 | System Prompt | 自定义系统提示词，留空则使用内置默认值 |
 | User Prompt Template | 自定义用户提示词模板，留空则使用内置默认值 |
 
-点击 **测试连接** 可验证 Base URL 和 API Key 是否有效。
+点击 **测试连接** 可验证 Base URL、API Key 与模型是否有效。
+
+### 支持的 API 格式与 Antigravity 配置
+
+- **OpenAI 兼容** (`openai`)：默认格式，向 `${baseURL}/chat/completions` 发起请求。
+- **Google Gemini** (`gemini`)：适用于 Google AI Studio 或 Antigravity Gemini v1beta 代理端点，向 `${baseURL}/models/${model}:generateContent` 发起请求。自动过滤 Gemini 2.5/3.x 推理思考内容（`thought: true`）。
+- **Anthropic Claude** (`claude`)：适用于 Anthropic 或 Antigravity Claude v1 代理端点，向 `${baseURL}/messages` 发起请求，携带 `anthropic-version: 2023-06-01`。
+- **Antigravity 原生** (`antigravity`)：适用于 Google Cloud Code / Antigravity 原生内部端点（`/v1internal:generateContent`）。自动注入客户端元数据并提取候选文本。
 
 ### 用户提示词模板占位符
 
